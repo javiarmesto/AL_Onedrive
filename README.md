@@ -5,7 +5,7 @@
 1. **Crear App Registration en Azure Portal**
    - Name: "BusinessCentral OneDrive Integration"
    - Account types: "Single tenant"
-   - API permissions: Files.ReadWrite.All, User.Read.All (Application permissions)
+   - API permissions: Files.ReadWrite.All, User.Read.All (Application permissions).Read.All (Application permissions)
    - Grant admin consent
 
 2. **Obtener credenciales**

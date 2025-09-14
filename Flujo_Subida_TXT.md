@@ -1,6 +1,18 @@
 # Flujo de Llamadas: Subida de TXT desde Setup
 
-Este documento describe el flujo de llamadas de funciones desde que se indica subir el TXT en la página de setup hasta la subida a OneDrive.
+Este documento describe el flujo completo de llamadas de funciones desde que se indica subir el TXT en la página de setup hasta la subida exitosa a OneDrive.
+
+## Requisitos Previos
+
+### Permisos de Azure App Registration
+- **Files.ReadWrite.All** (Application): Permite leer/escribir archivos en OneDrive
+- **User.Read.All** (Application): Permite buscar usuarios por email
+- **Admin consent**: Debe estar concedido para ambos permisos
+
+### Configuración Requerida
+- Tenant ID, Client ID, Client Secret del App Registration
+- Email del usuario de OneDrive (debe existir en el tenant)
+- Contenido TXT en el campo "TXT Content" de la página Setup
 
 ## Inicio: Página de Setup
 
@@ -69,36 +81,66 @@ Este documento describe el flujo de llamadas de funciones desde que se indica su
 - **`SanitizeForFileName(Value: Text)`** → Limpia caracteres inválidos
 
 ### Resultados y Errores
-- **`GetLastResultMessage()`** → Devuelve mensaje de éxito ("Subida OK") o error
-- **`ExtractGraphAPIError(ErrorObj: JsonObject)`** → Parsea errores específicos de Graph API
+- **`GetLastResultMessage()`** → Devuelve "Subida OK" en caso de éxito o código de error HTTP
 
-## Diagrama de Flujo
+## Diagrama de Flujo Completo
 
 ```
-Página Setup
+Usuario hace clic en "Subir TXT con contenido de Setup"
     ↓
-OnAction()
+Página Setup (Page 50512)
     ↓
-ExportTxtFromSetupField()
+OnAction() → Orchestrator.ExportTxtFromSetupField()
     ↓
-ExportTxtContentToOneDrive()
+Codeunit 50510: TXT → Webhook Orchestrator
     ↓
-PostTextWithRetry()
-    ↓ (loop)
-TryPostText()
-    ├── ResolveOneDriveUser()
-    │   ├── TryResolveUserDirect()
-    │   └── TryResolveUserWithFilter()
-    ├── AddOAuthAuthorizationHeaderToRequest()
-    └── Http.Send() → OneDrive
+1. ExportTxtFromSetupField()
+   ├── GetSetup() → Valida configuración completa
+   └── ExportTxtContentToOneDrive('SetupTXT', Content)
+       ↓
+2. ExportTxtContentToOneDrive()
+   ├── SanitizeForFileName() → Limpia nombre de archivo
+   ├── GetOneDriveFolderPath() → Obtiene ruta destino
+   └── PostTextWithRetry(Content, FileName, FolderPath, 'text/plain; charset=utf-8', Resp, 3)
+       ↓
+3. PostTextWithRetry() [Loop hasta 3 intentos]
+   └── TryPostText() → Intento de subida HTTP
+       ├── GetOneDriveUserEmail() → Email del usuario
+       ├── ResolveOneDriveUser() → ID del usuario
+       │   ├── TryResolveUserDirect() → GET /users/{email}
+       │   └── TryResolveUserWithFilter() → GET /users?$filter=...
+       ├── AddOAuthAuthorizationHeaderToRequest() → Token OAuth
+       │   └── OAuth2.AcquireTokenWithClientCredentials()
+       └── Http.Send(PUT /users/{id}/drive/root:/{path}:/content)
+           ↓
+Resultado HTTP (200-299 = Éxito)
     ↓
-GetLastResultMessage()
+GetLastResultMessage() → "Subida OK" o "Error HTTP {código}"
     ↓
-Message() en UI
+Message() en UI → Muestra resultado al usuario
 ```
 
-## Notas
-- El flujo usa subida directa de texto para evitar problemas con streams.
-- Incluye reintentos automáticos con backoff exponencial.
-- Maneja errores específicos de Microsoft Graph API.
-- La autenticación se hace a nivel de request para evitar duplicados de headers.
+## Troubleshooting
+
+### Errores Comunes
+
+- **Authorization_RequestDenied**: Verificar permisos Files.ReadWrite.All y User.Read.All con admin consent
+- **Invalid client**: Revisar Client Secret y Tenant ID
+- **User not found**: Verificar que el email del usuario existe en el tenant de Azure AD
+- **Empty file uploaded**: Problema resuelto con subida directa de texto
+- **HTTP 401/403**: Verificar configuración OAuth y permisos de aplicación
+
+### Logs de Debug
+
+- `LastResponseText`: Contiene la respuesta completa del servidor
+- `LastStatusCode`: Código HTTP de la última petición
+- `GetLastResultMessage()`: Mensaje simplificado para el usuario
+
+### Puntos de Verificación
+
+1. App Registration creada con permisos correctos
+2. Admin consent concedido
+3. Credenciales correctas en tabla Setup
+4. Usuario de OneDrive existe y es accesible
+5. Campo "TXT Content" tiene contenido
+6. Conexión a internet y Graph API accesible

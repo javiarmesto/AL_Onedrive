@@ -1,3 +1,7 @@
+/// <summary>
+/// Codeunit principal para la integración con OneDrive usando Microsoft Graph API
+/// Maneja la subida de archivos TXT, autenticación OAuth 2.0 y resolución de usuarios
+/// </summary>
 codeunit 50510 "TXT → Webhook Orchestrator"
 {
     SingleInstance = false;
@@ -6,7 +10,11 @@ codeunit 50510 "TXT → Webhook Orchestrator"
         LastResponseText: Text;
         LastStatusCode: Integer;
 
-    // Variante: si quieres pasar el contenido desde fuera
+    /// <summary>
+    /// Sube contenido de texto personalizado a OneDrive como archivo TXT
+    /// </summary>
+    /// <param name="FileBaseName">Nombre base del archivo (se añade timestamp)</param>
+    /// <param name="Content">Contenido de texto a subir</param>
     procedure ExportTxtContentToOneDrive(FileBaseName: Text; Content: Text)
     var
         FileName: Text;
@@ -27,7 +35,9 @@ codeunit 50510 "TXT → Webhook Orchestrator"
             Error('Fallo al subir TXT vía webhook. Respuesta: %1', CopyStr(Resp, 1, 250));
     end;
 
-    // Sube un TXT con el contenido almacenado en Setup."TXT Content"
+    /// <summary>
+    /// Sube el contenido del campo "TXT Content" de la tabla Setup a OneDrive
+    /// </summary>
     procedure ExportTxtFromSetupField()
     var
         Setup: Record "OneDrive Webhook Setup";
@@ -41,9 +51,19 @@ codeunit 50510 "TXT → Webhook Orchestrator"
     end;
 
     // ─────────────────────────────────────────────────────────────────────────────
-    // HTTP: POST al webhook con Base64 + metadatos + header de secreto simple
+    // FUNCIONES PÚBLICAS - PUNTO DE ENTRADA PARA SUBIDAS A ONEDRIVE
     // ─────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Intenta subir texto a OneDrive con reintentos automáticos y backoff exponencial
+    /// </summary>
+    /// <param name="ContentText">Contenido de texto a subir</param>
+    /// <param name="FileName">Nombre del archivo</param>
+    /// <param name="FolderPath">Ruta de la carpeta en OneDrive</param>
+    /// <param name="ContentType">Tipo MIME del contenido</param>
+    /// <param name="ResponseText">Respuesta del servidor</param>
+    /// <param name="Retries">Número máximo de reintentos</param>
+    /// <returns>True si la subida fue exitosa</returns>
     local procedure PostTextWithRetry(ContentText: Text; FileName: Text; FolderPath: Text; ContentType: Text; var ResponseText: Text; Retries: Integer): Boolean
     var
         Attempt: Integer;
@@ -59,6 +79,15 @@ codeunit 50510 "TXT → Webhook Orchestrator"
         exit(false);
     end;
 
+    /// <summary>
+    /// Realiza una subida directa de texto a OneDrive usando Microsoft Graph API
+    /// </summary>
+    /// <param name="ContentText">Contenido de texto a subir</param>
+    /// <param name="FileName">Nombre del archivo</param>
+    /// <param name="FolderPath">Ruta de la carpeta en OneDrive</param>
+    /// <param name="ContentType">Tipo MIME del contenido</param>
+    /// <param name="ResponseText">Respuesta del servidor</param>
+    /// <returns>True si la subida fue exitosa</returns>
     local procedure TryPostText(ContentText: Text; FileName: Text; FolderPath: Text; ContentType: Text; var ResponseText: Text): Boolean
     var
         Http: HttpClient;
@@ -107,6 +136,10 @@ codeunit 50510 "TXT → Webhook Orchestrator"
         exit(HttpResp.IsSuccessStatusCode());
     end;
 
+    /// <summary>
+    /// Obtiene el registro de configuración de OneDrive Webhook Setup
+    /// </summary>
+    /// <returns>Registro de configuración</returns>
     local procedure GetSetup(): Record "OneDrive Webhook Setup"
     var
         Setup: Record "OneDrive Webhook Setup";
@@ -117,9 +150,15 @@ codeunit 50510 "TXT → Webhook Orchestrator"
     end;
 
     // ─────────────────────────────────────────────────────────────────────────────
-    // OAuth 2.0 para Microsoft Graph API
+    // AUTENTICACIÓN Y SEGURIDAD - OAUTH 2.0 PARA MICROSOFT GRAPH API
     // ─────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Añade el header de autorización OAuth 2.0 a una petición HTTP usando Client Credentials flow
+    /// </summary>
+    /// <param name="HttpReq">Petición HTTP a la que añadir el header</param>
+    /// <param name="ErrorText">Mensaje de error si falla</param>
+    /// <returns>True si se obtuvo el token correctamente</returns>
     local procedure AddOAuthAuthorizationHeaderToRequest(var HttpReq: HttpRequestMessage; var ErrorText: Text): Boolean
     var
         OAuth2: Codeunit OAuth2;
@@ -159,11 +198,23 @@ codeunit 50510 "TXT → Webhook Orchestrator"
         end;
     end;
 
+    /// <summary>
+    /// Obtiene el email del usuario de OneDrive desde la configuración
+    /// </summary>
+    /// <returns>Email del usuario configurado</returns>
     local procedure GetOneDriveUserEmail(): Text
     begin
         exit(GetSetup()."OneDrive User Email");
     end;
 
+    /// <summary>
+    /// Resuelve el ID de usuario de Microsoft Graph a partir del email (UPN)
+    /// Intenta primero resolución directa, luego con filtro si falla
+    /// </summary>
+    /// <param name="UserUpn">Email del usuario (User Principal Name)</param>
+    /// <param name="ResolvedId">ID del usuario resuelto</param>
+    /// <param name="ErrorText">Mensaje de error si falla</param>
+    /// <returns>True si se resolvió el usuario correctamente</returns>
     local procedure ResolveOneDriveUser(UserUpn: Text; var ResolvedId: Text; var ErrorText: Text): Boolean
     var
         Http: HttpClient;
@@ -188,6 +239,13 @@ codeunit 50510 "TXT → Webhook Orchestrator"
         exit(false);
     end;
 
+    /// <summary>
+    /// Intenta resolver el usuario mediante consulta directa a Microsoft Graph API
+    /// </summary>
+    /// <param name="UserUpn">Email del usuario (User Principal Name)</param>
+    /// <param name="ResolvedId">ID del usuario resuelto</param>
+    /// <param name="ErrorText">Mensaje de error si falla</param>
+    /// <returns>True si se resolvió el usuario correctamente</returns>
     local procedure TryResolveUserDirect(UserUpn: Text; var ResolvedId: Text; var ErrorText: Text): Boolean
     var
         Http: HttpClient;
@@ -232,6 +290,14 @@ codeunit 50510 "TXT → Webhook Orchestrator"
         exit(false);
     end;
 
+    /// <summary>
+    /// Intenta resolver el usuario mediante consulta con filtro a Microsoft Graph API
+    /// Más tolerante con variaciones en el formato del email
+    /// </summary>
+    /// <param name="UserUpn">Email del usuario (User Principal Name)</param>
+    /// <param name="ResolvedId">ID del usuario resuelto</param>
+    /// <param name="ErrorText">Mensaje de error si falla</param>
+    /// <returns>True si se resolvió el usuario correctamente</returns>
     local procedure TryResolveUserWithFilter(UserUpn: Text; var ResolvedId: Text; var ErrorText: Text): Boolean
     var
         Http: HttpClient;
@@ -287,6 +353,11 @@ codeunit 50510 "TXT → Webhook Orchestrator"
         end;
     end;
 
+    /// <summary>
+    /// Obtiene la ruta de carpeta de OneDrive desde la configuración
+    /// Si no hay ruta personalizada, usa la estructura por defecto: BC/{Company}/{YYYY}/{MM}
+    /// </summary>
+    /// <returns>Ruta de la carpeta en OneDrive</returns>
     local procedure GetOneDriveFolderPath(): Text
     var
         Setup: Record "OneDrive Webhook Setup";
@@ -311,6 +382,16 @@ codeunit 50510 "TXT → Webhook Orchestrator"
         end;
     end;
 
+    // ─────────────────────────────────────────────────────────────────────────────
+    // FUNCIONES AUXILIARES - UTILIDADES Y CONFIGURACIÓN
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Limpia un texto para que sea válido como nombre de archivo en OneDrive/Windows
+    /// Reemplaza espacios por guiones bajos y elimina caracteres inválidos
+    /// </summary>
+    /// <param name="Value">Texto a sanitizar</param>
+    /// <returns>Texto sanitizado válido para nombres de archivo</returns>
     local procedure SanitizeForFileName(Value: Text): Text
     var
         Tmp: Text;
@@ -321,6 +402,11 @@ codeunit 50510 "TXT → Webhook Orchestrator"
         exit(Tmp);
     end;
 
+    /// <summary>
+    /// Obtiene el mensaje de resultado de la última operación HTTP
+    /// Devuelve "Subida OK" para códigos 200-299, o mensaje de error para otros códigos
+    /// </summary>
+    /// <returns>Mensaje descriptivo del resultado de la operación</returns>
     procedure GetLastResultMessage(): Text
     begin
         if (LastStatusCode >= 200) and (LastStatusCode < 300) then
