@@ -38,6 +38,21 @@ page 50512 "OneDrive Webhook Setup"
                     ApplicationArea = All;
                     ToolTip = 'Ruta personalizada en OneDrive (ej: MisCarpetas/Exports). Si está vacío usa BC/{Company}/{YYYY}/{MM}';
                 }
+                field("Is Shared Folder"; Rec."Is Shared Folder")
+                {
+                    ApplicationArea = All;
+                    ToolTip = 'Indica si la carpeta es compartida (requiere Drive ID e Item ID)';
+                }
+                field("Shared Folder Drive ID"; Rec."Shared Folder Drive ID")
+                {
+                    ApplicationArea = All;
+                    ToolTip = 'Drive ID de la carpeta compartida (solo si es compartida)';
+                }
+                field("Shared Folder Item ID"; Rec."Shared Folder Item ID")
+                {
+                    ApplicationArea = All;
+                    ToolTip = 'Item ID de la carpeta compartida (solo si es compartida)';
+                }
                 field("TXT Content"; Rec."TXT Content")
                 {
                     ApplicationArea = All;

@@ -8,6 +8,21 @@ table 50511 "OneDrive Webhook Setup"
         {
             DataClassification = SystemMetadata;
         }
+        field(10; "Is Shared Folder"; Boolean)
+        {
+            Caption = 'Is Shared Folder';
+            DataClassification = CustomerContent;
+        }
+        field(11; "Shared Folder Item ID"; Text[250])
+        {
+            Caption = 'Shared Folder Item ID';
+            DataClassification = CustomerContent;
+        }
+        field(12; "Shared Folder Drive ID"; Text[250])
+        {
+            Caption = 'Shared Folder Drive ID';
+            DataClassification = CustomerContent;
+        }
         field(30; "Tenant ID"; Text[100])
         {
             DataClassification = CustomerContent;

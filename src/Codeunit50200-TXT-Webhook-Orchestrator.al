@@ -100,6 +100,10 @@ codeunit 50510 "TXT → Webhook Orchestrator"
         UserEmail: Text;
         ResolvedUserId: Text;
         FilePath: Text;
+        Setup: Record "OneDrive Webhook Setup";
+        IsShared: Boolean;
+        SharedItemId: Text;
+        SharedDriveId: Text;
     begin
         LastResponseText := '';
         LastStatusCode := 0;
@@ -113,8 +117,23 @@ codeunit 50510 "TXT → Webhook Orchestrator"
         if not ResolveOneDriveUser(UserEmail, ResolvedUserId, ResponseText) then
             exit(false);
 
-        FilePath := StrSubstNo('%1/%2', FolderPath, FileName);
-        Url := StrSubstNo('https://graph.microsoft.com/v1.0/users/%1/drive/root:/%2:/content', ResolvedUserId, FilePath);
+        Setup := GetSetup();
+        IsShared := Setup."Is Shared Folder";
+        SharedItemId := Setup."Shared Folder Item ID";
+        SharedDriveId := Setup."Shared Folder Drive ID";
+
+        if IsShared then begin
+            // Para carpeta compartida: usar /drives/{driveId}/items/{itemId}:/{filename}:/content
+            if (SharedDriveId = '') or (SharedItemId = '') then begin
+                ResponseText := 'Error: Configuración incompleta para carpeta compartida. Verifica Drive ID e Item ID.';
+                exit(false);
+            end;
+            Url := StrSubstNo('https://graph.microsoft.com/v1.0/drives/%1/items/%2:/%3:/content', SharedDriveId, SharedItemId, FileName);
+        end else begin
+            // Para carpeta propia: usar la lógica existente
+            FilePath := StrSubstNo('%1/%2', FolderPath, FileName);
+            Url := StrSubstNo('https://graph.microsoft.com/v1.0/users/%1/drive/root:/%2:/content', ResolvedUserId, FilePath);
+        end;
 
         HttpReq.SetRequestUri(Url);
         HttpReq.Method := 'PUT';
@@ -400,6 +419,49 @@ codeunit 50510 "TXT → Webhook Orchestrator"
         Tmp := ConvertStr(Value, ' ', '_');
         Tmp := DelChr(Tmp, '=', '\/:*?"<>|');
         exit(Tmp);
+    end;
+
+    /// <summary>
+    /// Obtiene el Drive ID e Item ID de una carpeta compartida a partir de su URL de OneDrive
+    /// </summary>
+    /// <param name="SharedUrl">URL de la carpeta compartida</param>
+    /// <param name="DriveId">Drive ID resuelto</param>
+    /// <param name="ItemId">Item ID resuelto</param>
+    /// <param name="ErrorText">Mensaje de error si falla</param>
+    /// <returns>True si se resolvió correctamente</returns>
+    local procedure GetSharedFolderIds(SharedUrl: Text; var DriveId: Text; var ItemId: Text; var ErrorText: Text): Boolean
+    var
+        Http: HttpClient;
+        Resp: HttpResponseMessage;
+        Req: HttpRequestMessage;
+        TokenResp: Text;
+        JObj: JsonObject;
+        Tok: JsonToken;
+    begin
+        Req.SetRequestUri(StrSubstNo('https://graph.microsoft.com/v1.0/me/drive/sharedWithMe?$filter=webUrl eq ''%1''', SharedUrl));
+        Req.Method := 'GET';
+
+        if not AddOAuthAuthorizationHeaderToRequest(Req, ErrorText) then
+            exit(false);
+
+        if Http.Send(Req, Resp) and Resp.IsSuccessStatusCode() then begin
+            Resp.Content().ReadAs(TokenResp);
+            if JObj.ReadFrom(TokenResp) then begin
+                if JObj.Get('value', Tok) and (Tok.AsArray().Count() > 0) then begin
+                    Tok.AsArray().Get(0, Tok);
+                    if Tok.AsObject().Get('remoteItem', Tok) then begin
+                        Tok.AsObject().Get('id', Tok);
+                        ItemId := Tok.AsValue().AsText();
+                        Tok.AsObject().Get('parentReference', Tok);
+                        Tok.AsObject().Get('driveId', Tok);
+                        DriveId := Tok.AsValue().AsText();
+                        exit(true);
+                    end;
+                end;
+            end;
+        end;
+        ErrorText := 'No se pudo resolver la carpeta compartida: ' + TokenResp;
+        exit(false);
     end;
 
     /// <summary>
